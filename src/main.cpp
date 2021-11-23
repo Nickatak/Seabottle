@@ -1,8 +1,8 @@
-#include "testing.h"
+#include "seabottle.h"
 
 
 int main()
 {
-	test_me();
+	seabottle::test_me();
 	return 0;
 }
