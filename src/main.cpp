@@ -1,8 +1,10 @@
 #include "seabottle.h"
 
+using namespace seabottle;
 
 int main()
 {
-	seabottle::test_me();
+	App *app = new App();
+	app->run();
 	return 0;
 }
