@@ -14,16 +14,15 @@
 #include <pthread.h>
 
 
-#include "socket_handler.h"
-
-
 namespace seabottle {
     class SocketServer {
         private:
-            int socket_descriptor, bind_port, max_queue = 3;
+            int socket_descriptor, bind_port, MAX_QUEUE = 3;
             struct sockaddr_in addr;
             std::string bind_addr;
             std::string (*on_accept)() = nullptr;
+            // Arbitrary max length in bytes (2MB) for an HTTP request?
+            unsigned long MAX_BYTES = 2000000;
         public:
             SocketServer(std::string bind_addr, int port_number);
             /* Creates a new SocketServer object.

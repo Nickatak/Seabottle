@@ -16,7 +16,7 @@ namespace seabottle {
     class App {
         private:
             std::vector<Route> routes;
-            SocketServer *raw_server;
+            SocketServer* raw_server;
         public:
             App();
             void run();
