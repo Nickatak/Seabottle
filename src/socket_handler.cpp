@@ -1,31 +1,48 @@
-#include <iostream>
-
 #include "socket_handler.h"
 
 
 namespace seabottle {
-    struct PThreadPasser {
-        // Quick utility struct to pass stuff to the POSIX child-thread.
-        int conn_descriptor;
-        std::vector<char>* buf;
-        PThreadPasser(int conn, std::vector<char>* buf);
+    bool is_end_http_req(std::vector<char>* data) {
+        const char* termination_sequence = "\r\n\r\n";
+        if (std::search(data->begin(), data->end(), termination_sequence, termination_sequence + strlen(termination_sequence)) != data->end() ) {
+            return true;
+        }
+
+        return false;
     };
+
+    void* recv_all(void* passed_struct) {
+        // Cast type and dereference.
+        PThreadPasser passer = *((PThreadPasser*)passed_struct);
+        int chunk_size = 64;
+        int offset_multiplier = 0;
+        char* buffer_address;
+
+        // Okay, so now I SHOULD be modifying the same memory as the PThreadPasser reference inside of the SocketServer::listen_continuously() function.
+        passer.buf->resize(chunk_size);
+        while(true) {
+            // Calculate the char* address to start writing the recieved data into the buffer.
+            buffer_address = passer.buf->data() + (chunk_size * offset_multiplier);
+
+            // Read into the buffer and resize it as necessary.
+            chunk_size = recv(passer.conn_descriptor, buffer_address, chunk_size, 0);
+            passer.buf->resize(passer.buf->size() + chunk_size);
+
+            if ( is_end_http_req(passer.buf) || (chunk_size == 0)) {
+                // Exit the thread if we find the termination string OR we received no data.
+                pthread_exit(nullptr);
+            }
+            offset_multiplier++;
+        }
+
+        // The computer should NEVER make it here -- but, I don't know, I'll leave it here just in case.
+        pthread_exit(nullptr);
+    };
+
 
     PThreadPasser::PThreadPasser(int conn, std::vector<char>* buf) {
         this->conn_descriptor = conn;
         this->buf = buf;
-    };
-
-
-    void* parse_request(void* passed_struct) {
-        // Cast type and dereference.
-        PThreadPasser passer = *((PThreadPasser*)passed_struct);
-
-        // Okay, so now I SHOULD be modifying the same memory as the PThreadPasser reference inside of the SocketServer::listen_continuously() function.
-        passer.buf->push_back('h');
-
-        // Does this do what I think it does?  It sure as hell shuts up the compiler -- this might not be a great thing; I'll look at it later.
-        return nullptr;
     };
 
 
@@ -57,7 +74,7 @@ namespace seabottle {
 
         // Bind the socket.
         if ( bind(socket_descriptor, (struct sockaddr*)&this->addr, sizeof(this->addr)) ) {
-            throw std::runtime_error("Failed to bind to " + this->bind_addr + std::to_string(this->bind_port));
+            throw std::runtime_error("Failed to bind to " + this->bind_addr + ':' + std::to_string(this->bind_port));
         }
 
         // Places the socket into listen mode with a max-queue of 3 attempted incoming connections (Note: This is a NON-blocking call).
@@ -70,24 +87,22 @@ namespace seabottle {
         std::cout << "Listening..." << std::endl;
         while ( conn_descriptor = accept(this->socket_descriptor, (struct sockaddr*)&client, (socklen_t*)&temp) )  {
             pthread_t thread_id;
-            PThreadPasser* passer = new PThreadPasser(conn_descriptor, new std::vector<char>(5000));
+            PThreadPasser* passer = new PThreadPasser(conn_descriptor, new std::vector<char>());
 
 
             // Is this right? -1? Or < 0?  I need to read more about this.
-            if ( pthread_create(&thread_id, nullptr, parse_request, (void*)passer) == -1 ) {
+            if ( pthread_create(&thread_id, nullptr, recv_all, (void*)passer) == -1 ) {
                 perror("Failed to spawn thread.");
                 return;
             }
             // Blocking call to garbage collect any thread resources before continuing.
             pthread_join(thread_id, NULL);
 
-            std::cout << std::string(passer->buf->begin(), passer->buf->end()) << std::endl;
+            this->on_accept(new std::string(passer->buf->begin(), passer->buf->end()));
         }
-        
     };
 
-
-    void SocketServer::set_on_accept(std::string (*responding_func)()) {
+    void SocketServer::set_on_accept(std::string (*responding_func)(std::string* raw_request)) {
         this->on_accept = responding_func;
     }
 }
